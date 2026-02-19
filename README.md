@@ -15,7 +15,7 @@ Before you begin, ensure you have the following installed on your system:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/SpreadsheetApp.git
+git clone https://github.com/tauhidst07/spreadhsheet.git
 cd SpreadsheetApp
 ```
 
@@ -148,14 +148,5 @@ This application works on all modern browsers that support ES2020+ JavaScript:
 - Clear any build cache: `rm -rf dist`
 - Try rebuilding: `npm run build`
 
-## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-For issues and questions, please open an issue on the GitHub repository.

@@ -103,22 +103,22 @@ You have **3 days** to complete as many of the following tasks as you can. Quali
 
 ---
 
-### Task 3: Find & Replace
+### Task 3: Local Storage Persistence
 
-**Goal**: Add a Find & Replace dialog accessible via **Ctrl+H**.
+**Goal**: Implement automatic saving and loading of spreadsheet data using browser local storage.
 
 **Requirements**:
-1. A floating dialog (not a modal that blocks interaction) with fields for "Find" and "Replace"
-2. **Find** should search across all cell values — both raw formula text AND computed display values
-3. Matched cells should be **highlighted** in the grid (e.g., yellow background) as the user types in the Find field
-4. "Find Next" button should navigate to and select the next matching cell
-5. "Replace" should replace the match in the current cell; "Replace All" should replace in all matching cells
-6. Replacing within a formula should be smart: if finding "100" in `=A1+100`, replacing with "200" should produce `=A1+200`
-7. The find should be **case-insensitive** by default with a toggle for case-sensitive search
-8. The dialog should show a match count (e.g., "3 of 12 matches")
-9. All replacements should be undo-able (each "Replace All" as a single undo step)
+1. The spreadsheet should **automatically save** to local storage whenever any cell value, formula, or formatting changes
+2. On page load, the spreadsheet should **automatically restore** the last saved state (including cell values, formulas, and formatting)
+3. Cell styles (bold, italic, underline, colors, alignment, font size) must be persisted and restored
+4. The undo/redo history should **NOT** be persisted (start fresh on each page load)
+5. Row and column insertions/deletions must be persisted (the grid dimensions should match the saved state)
+6. If local storage is empty or corrupted, the spreadsheet should start with a clean 50x50 grid
+7. The save operation should be **debounced** (wait 500ms after the last change before saving) to avoid excessive writes
+8. Handle edge cases: very large spreadsheets (consider storage limits), invalid JSON, and browser storage quota exceeded errors
+9. The persistence should work seamlessly — users shouldn't notice any performance impact
 
-**Hints**: Consider whether you search the raw formula string, the computed value, or both. Think about how to handle replacing text that appears in a cell reference (e.g., finding "A1" — should it match the formula `=A1+B1`?).
+**Hints**: Consider what data structure to save. You'll need to persist both the engine's cell data and the React component's cell styles. Think about how to serialize and deserialize the engine state. The `createEngine` function returns an object with methods — you may need to add a way to export/import the internal state.
 
 ---
 

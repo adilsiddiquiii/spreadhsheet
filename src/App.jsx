@@ -6,11 +6,15 @@ const TOTAL_ROWS = 50
 const TOTAL_COLS = 50
 
 export default function App() {
+  // Engine instance is created once and reused across renders
+  // Note: The engine maintains its own internal state, so React state is only used for UI updates
   const [engine] = useState(() => createEngine(TOTAL_ROWS, TOTAL_COLS))
   const [version, setVersion] = useState(0)
   const [selectedCell, setSelectedCell] = useState(null)
   const [editingCell, setEditingCell] = useState(null)
   const [editValue, setEditValue] = useState('')
+  // Cell styles are stored separately from engine data
+  // Format: { "row,col": { bold: bool, italic: bool, ... } }
   const [cellStyles, setCellStyles] = useState({})
   const cellInputRef = useRef(null)
 
@@ -45,8 +49,12 @@ export default function App() {
   }, [engine])
 
   const commitEdit = useCallback((row, col) => {
-    engine.setCell(row, col, editValue)
-    forceRerender()
+    // Only commit if the value actually changed to avoid unnecessary recalculations
+    const currentCell = engine.getCell(row, col)
+    if (currentCell.raw !== editValue) {
+      engine.setCell(row, col, editValue)
+      forceRerender()
+    }
     setEditingCell(null)
   }, [engine, editValue, forceRerender])
 
@@ -166,6 +174,9 @@ export default function App() {
     if (!selectedCell) return
     engine.setCell(selectedCell.r, selectedCell.c, '')
     forceRerender()
+    // Remove style entry for cleared cell
+    // Note: This deletes the style object entirely - if you need to preserve default styles,
+    // you may want to set them explicitly rather than deleting
     const key = `${selectedCell.r},${selectedCell.c}`
     setCellStyles(prev => { const next = { ...prev }; delete next[key]; return next })
     setEditValue('')
@@ -239,6 +250,9 @@ export default function App() {
     ? `${getColumnLabel(selectedCell.c)}${selectedCell.r + 1}`
     : 'No cell'
 
+  // Formula bar shows the raw formula text, not the computed value
+  // When editing, show the current editValue; otherwise show the cell's raw content
+  // Note: This is different from the cell display, which shows computed values
   const formulaBarValue = editingCell
     ? editValue
     : (selectedCell ? engine.getCell(selectedCell.r, selectedCell.c).raw : '')

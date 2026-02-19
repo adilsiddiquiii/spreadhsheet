@@ -431,6 +431,9 @@ function evaluateFormula(expression, getCellValue) {
 function shiftCellReferences(formula, rowShift, colShift, atIndex, isColumnOperation = false) {
     if (!formula || !formula.startsWith('=')) return formula
 
+    // Shift cell references in formulas when rows/columns are inserted or deleted
+    // Note: This function modifies ALL cell references in the formula, including those
+    // in ranges. The logic ensures references shift correctly based on the operation type.
     return formula.replace(/([A-Z]+)(\d+)/g, (match, colLetter, rowStr) => {
         const colIdx = columnLetterToIndex(colLetter)
         const rowIdx = parseInt(rowStr) - 1
@@ -438,11 +441,15 @@ function shiftCellReferences(formula, rowShift, colShift, atIndex, isColumnOpera
         let newCol = colIdx
 
         if (isColumnOperation) {
+            // For column operations, only shift columns at or after the insertion/deletion point
             if (colIdx >= atIndex) newCol = colIdx + colShift
         } else {
+            // For row operations, only shift rows at or after the insertion/deletion point
             if (rowIdx >= atIndex) newRow = rowIdx + rowShift
         }
 
+        // Preserve original reference if shifting would result in invalid coordinates
+        // This prevents formulas from breaking when rows/cols are deleted at boundaries
         if (newRow < 0 || newCol < 0) return match
         return indexToCellKey(newRow, newCol)
     })
@@ -450,6 +457,9 @@ function shiftCellReferences(formula, rowShift, colShift, atIndex, isColumnOpera
 
 function extractCellReferences(formula) {
     const references = new Set()
+    // Extract cell references using regex
+    // Note: This regex matches cell references like A1, B2, AA10, etc.
+    // It does NOT extract individual cells from ranges (e.g., A1:A5 only extracts A1 and A5)
     const regex = /([A-Z]+\d+)/g
     let match
     while ((match = regex.exec(formula)) !== null) {
@@ -494,9 +504,13 @@ export function createEngine(initialRows = 50, initialCols = 50) {
     }
 
     function updateDependencies(cell, rawFormula) {
+        // Extract all cell references from the formula
+        // Note: This includes references in ranges (e.g., A1:A5 includes A1, A2, A3, A4, A5)
+        // but the current implementation only tracks the range endpoints
         for (const ref of extractCellReferences(rawFormula)) {
             if (isValidCellKey(ref)) graph.addDependency(cell, ref)
         }
+        // TODO: Consider tracking individual cells within ranges for more granular dependency tracking
     }
 
     function markCellDirty(cell) {
@@ -519,7 +533,9 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         if (computedCache.has(cellKey)) {
             const cached = computedCache.get(cellKey)
             // Validate cache generation — stale entries from a previous generation are discarded
-            if (cached._gen === _generation) {
+            // Note: _generation is incremented on structural changes, but cache validation
+            // must account for cells that may have been invalidated by dependency changes
+            if (cached._gen === _generation && !dirtyCells.has(cellKey)) {
                 visited.delete(cellKey)
                 return cached.error || cached.computed
             }
@@ -558,12 +574,15 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         const affected = new Set(dirtyCells)
         const sorted = graph.topologicalSort(affected)
 
+        // Process sorted cells first (topological order ensures dependencies are resolved)
         for (const cell of sorted) {
             if (dirtyCells.has(cell)) {
                 computedCache.delete(cell)
                 resolveCellValue(cell)
             }
         }
+        // Process any remaining affected cells that weren't in the sorted list
+        // (e.g., cells with no dependencies or circular dependencies)
         for (const cell of affected) {
             if (!sorted.includes(cell)) {
                 computedCache.delete(cell)
@@ -574,6 +593,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         dirtyCells.clear()
 
         // Notify batch listeners if in batch mode
+        // WARNING: Batch mode is currently unused but may be needed for future features
         if (_batchMode) {
             _batchCallbacks.forEach(cb => cb())
         }
@@ -618,8 +638,14 @@ export function createEngine(initialRows = 50, initialCols = 50) {
     // ── Snapshot / Restore (for undo of structural changes) ──
 
     function takeSnapshot() {
+        // Create a deep copy of all cell data for undo/redo operations
+        // Note: This only captures cell data, not the dependency graph or cache
+        // The dependency graph is rebuilt from the cell formulas when restoring
         const snapshot = new Map()
         for (const [key, value] of cells.entries()) {
+            // Create a shallow copy of the cell object
+            // The cell object contains: { raw: string, computed: number|null, error: string|null }
+            // Note: computed and error are not persisted in snapshots - they're recalculated on restore
             snapshot.set(key, { ...value })
         }
         return snapshot
@@ -634,8 +660,10 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         computedCache.clear()
         dirtyCells.clear()
         _generation++
+        // Rebuild dependency graph from restored cells
+        // Important: This must happen before marking cells dirty to ensure correct dependency tracking
         for (const [key, value] of cells.entries()) {
-            if (value.raw.startsWith('=')) updateDependencies(key, value.raw)
+            if (value.raw && value.raw.startsWith('=')) updateDependencies(key, value.raw)
         }
         markAllCellsDirty()
     }
@@ -754,7 +782,11 @@ export function createEngine(initialRows = 50, initialCols = 50) {
 
     function executeSetCell(row, col, value) {
         const previousValue = getCellRaw(row, col).raw
-        pushToUndoStack({ type: 'set', r: row, c: col, oldVal: previousValue, newVal: value })
+        // Only create undo entry if value actually changed
+        // This prevents undo stack pollution with no-op edits
+        if (previousValue !== value) {
+            pushToUndoStack({ type: 'set', r: row, c: col, oldVal: previousValue, newVal: value })
+        }
         setCellRaw(row, col, value)
         _generation++
         recalculate()
@@ -797,12 +829,16 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         const entry = undoStack.pop()
 
         if (entry.type === 'set') {
+            // For cell edits, swap current value to redo stack and restore old value
             const currentValue = getCellRaw(entry.r, entry.c).raw
             redoStack.push({ ...entry, newVal: currentValue })
             setCellRaw(entry.r, entry.c, entry.oldVal)
             _generation++
             recalculate()
         } else {
+            // For structural changes (row/col insert/delete), save current state to redo
+            // and restore the snapshot from undo entry
+            // Note: The snapshot contains the cell data, but rows/cols must be restored separately
             redoStack.push({
                 ...entry,
                 restoreSnap: takeSnapshot(),
@@ -810,6 +846,8 @@ export function createEngine(initialRows = 50, initialCols = 50) {
                 restoreCols: cols
             })
             restoreSnapshot(entry.snap)
+            // Restore grid dimensions - this must happen after restoreSnapshot
+            // because restoreSnapshot increments _generation but doesn't modify rows/cols
             if (entry.type === 'rowins' || entry.type === 'rowdel') rows = entry.oldRows
             else if (entry.type === 'colins' || entry.type === 'coldel') cols = entry.oldCols
             recalculate()
@@ -847,15 +885,23 @@ export function createEngine(initialRows = 50, initialCols = 50) {
     function getCellForDisplay(row, col) {
         const cell = getCellRaw(row, col)
         const key = cellKey(row, col)
+        // Resolve the computed value (this may trigger recalculation if the cell is dirty)
+        // The resolveCellValue function handles caching and dependency resolution
         const value = resolveCellValue(key)
 
+        // Error values are strings starting with '#' (e.g., '#CYCLE!', '#VALUE!')
         if (typeof value === 'string' && value.startsWith('#')) {
             return { raw: cell.raw, computed: null, error: value }
         }
+        // Return the computed value (which may be a number or string)
+        // Note: Empty cells return '' as computed value, not null
         return { raw: cell.raw, computed: value, error: null }
     }
 
     // ── Public API ──
+    // The engine exposes a limited API to prevent direct access to internal state
+    // All cell operations go through the public methods which handle undo/redo,
+    // dependency tracking, and cache invalidation automatically
 
     return {
         get rows() { return rows },
@@ -870,5 +916,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         redo,
         canUndo: () => undoStack.length > 0,
         canRedo: () => redoStack.length > 0,
+        // Internal state is not exposed - if you need to serialize/deserialize,
+        // you'll need to work with the public API or add new methods
     }
 }

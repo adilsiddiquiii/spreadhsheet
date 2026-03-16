@@ -89,6 +89,12 @@ SpreadsheetApp/
 └── README.md             # This file
 ```
 
+## Key Decisions & Implementation Details
+
+- **Column Sort & Filter**: Sorting evaluates computed values (formula results) to match expected spreadsheet behavior natively. Filtering non-destructively hides rows rather than deleting data, maintaining formulas securely.
+- **Clipboard Integration**: Implemented global tab-separated copy-paste, allowing seamless data migration and multi-cell structural transfers between this app and external tools like Microsoft Excel or Google Sheets.
+- **Local Storage Persistence**: Grid contents and styles are automatically saved using a 500ms debounced effect. This provides robust crash recovery while preventing performance bottlenecks during rapid typing.
+
 ## Technologies Used
 
 - **React** - A JavaScript library for building user interfaces

@@ -792,6 +792,28 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         recalculate()
     }
 
+    function executeSetCells(updates) {
+        // updates is array of {r, c, val}
+        const snapshot = takeSnapshot()
+        const previousRows = rows
+        const previousCols = cols
+        let actuallyChanged = false
+
+        for (const update of updates) {
+            const previousValue = getCellRaw(update.r, update.c).raw
+            if (previousValue !== update.val) {
+                actuallyChanged = true
+                setCellRaw(update.r, update.c, update.val)
+            }
+        }
+        
+        if (actuallyChanged) {
+            pushToUndoStack({ type: 'setcells', snap: snapshot, oldRows: previousRows, oldCols: previousCols })
+            _generation++
+            recalculate()
+        }
+    }
+
     function executeInsertRow(atIndex) {
         const snapshot = takeSnapshot()
         const previousRows = rows
@@ -835,6 +857,17 @@ export function createEngine(initialRows = 50, initialCols = 50) {
             setCellRaw(entry.r, entry.c, entry.oldVal)
             _generation++
             recalculate()
+        } else if (entry.type === 'setcells') {
+            redoStack.push({
+                ...entry,
+                restoreSnap: takeSnapshot(),
+                restoreRows: rows,
+                restoreCols: cols
+            })
+            restoreSnapshot(entry.snap)
+            if (entry.oldRows !== undefined) rows = entry.oldRows
+            if (entry.oldCols !== undefined) cols = entry.oldCols
+            recalculate()
         } else {
             // For structural changes (row/col insert/delete), save current state to redo
             // and restore the snapshot from undo entry
@@ -865,7 +898,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
             setCellRaw(entry.r, entry.c, entry.newVal)
             _generation++
             recalculate()
-        } else {
+        } else if (entry.type === 'setcells' || entry.type === 'rowins' || entry.type === 'rowdel' || entry.type === 'colins' || entry.type === 'coldel') {
             undoStack.push({
                 ...entry,
                 snap: takeSnapshot(),
@@ -908,6 +941,7 @@ export function createEngine(initialRows = 50, initialCols = 50) {
         get cols() { return cols },
         getCell: getCellForDisplay,
         setCell: executeSetCell,
+        setCells: executeSetCells,
         insertRow: executeInsertRow,
         deleteRow: executeDeleteRow,
         insertColumn: executeInsertColumn,

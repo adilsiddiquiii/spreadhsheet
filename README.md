@@ -8,7 +8,7 @@ Before you begin, ensure you have the following installed on your system:
 
 - **Node.js** (version 18 or higher) - [Download](https://nodejs.org/)
 - **npm** (comes with Node.js) or **yarn**
-- **Git** - [Download](https://git-scm.com/)
+- **Git** - [Download](https://git-scm.com/) 
 
 ## Getting Started
 
